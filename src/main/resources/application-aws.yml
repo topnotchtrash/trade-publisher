@@ -1,0 +1,18 @@
+spring:
+  # Kafka - AWS EC2
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+
+  # Redis - AWS EC2
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+
+# Logging - Production (Optimized for performance)
+logging:
+  level:
+    com:
+      traderecon: INFO
+    org:
+      springframework: WARN

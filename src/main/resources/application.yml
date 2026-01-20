@@ -1,0 +1,65 @@
+spring:
+  application:
+    name: trade-publisher
+
+  # Kafka Configuration
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      retries: 3
+      retry:
+        backoff:
+          ms: 1000
+      batch-size: 16384
+      linger:
+        ms: 10
+      buffer-memory: 33554432
+      compression-type: snappy
+      max:
+        in-flight:
+          requests:
+            per:
+              connection: 5
+      enable-idempotence: true
+
+  # Redis Configuration
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+server:
+  port: 8080
+
+# Custom Business Properties
+kafka:
+  topic:
+    trade-input: trade-recon-input
+
+batch:
+  size: 100
+
+job:
+  ttl-hours: 24
+
+# Actuator & Metrics
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, prometheus
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+# Logging
+logging:
+  level:
+    com:
+      traderecon: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
