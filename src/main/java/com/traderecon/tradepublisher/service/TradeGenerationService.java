@@ -118,7 +118,7 @@ public class TradeGenerationService {
             int currentTotal = totalPublished.addAndGet(publishedInBatch);
 
             // Update progress in Redis (shared state)
-            jobTrackingService.updateProgress(jobId, currentTotal, totalTradeCount);
+            jobTrackingService.updateProgress(jobId, publishedInBatch, totalTradeCount);
 
             if (batchIndex % 10 == 0) {
                 log.info("Batch {}/{} processed by thread: {}",

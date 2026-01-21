@@ -64,21 +64,18 @@ public class JobTrackingService {
         log.info("Job {} - Trades generated: {}", jobId, tradesGenerated);
     }
 
-    public void updateProgress(String jobId, int tradesPublished, int totalTrades) {
-        JobStatus jobStatus = getJobStatus(jobId);
-        jobStatus.setTradesPublished(tradesPublished);
+    public void updateProgress(String jobId, int delta, int totalTrades) {
+        String key = "JOB_STATUS:" + jobId;
+        String hashKey = "tradesPublished";
 
-        saveJobStatus(jobId, jobStatus);
+        // This forces Redis to treat the value as a long for the increment operation
+        Long newTotal = redisTemplate.opsForHash().increment(key, hashKey, (long) delta);
 
-        if (tradesPublished % 10000 == 0 || tradesPublished == totalTrades) {
+        if (newTotal != null && (newTotal % 10000 == 0 || newTotal >= totalTrades)) {
             log.info("Job {} progress: {}/{} trades published ({}%)",
-                    jobId,
-                    tradesPublished,
-                    totalTrades,
-                    (tradesPublished * 100) / totalTrades);
+                    jobId, newTotal, totalTrades, (newTotal * 100) / totalTrades);
         }
     }
-
     public void incrementFailedPublishes(String jobId) {
         JobStatus jobStatus = getJobStatus(jobId);
         jobStatus.setFailedPublishes(jobStatus.getFailedPublishes() + 1);
