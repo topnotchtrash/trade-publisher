@@ -17,6 +17,8 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.IntStream;
 
 @Service
 @RequiredArgsConstructor
@@ -97,29 +99,36 @@ public class TradeGenerationService {
     }
 
     private int publishTradesInBatches(List<Trade> trades, String jobId) {
-        int totalPublished = 0;
-        int batchCount = (int) Math.ceil((double) trades.size() / batchSize);
+        AtomicInteger totalPublished = new AtomicInteger(0); // Thread-safe counter
+        int totalTradeCount = trades.size();
+        int batchCount = (int) Math.ceil((double) totalTradeCount / batchSize);
 
-        log.info("Publishing {} trades in {} batches of size {}", trades.size(), batchCount, batchSize);
+        log.info("Starting Parallel Publishing: {} trades in {} batches", totalTradeCount, batchCount);
 
-        for (int i = 0; i < trades.size(); i += batchSize) {
-            int end = Math.min(i + batchSize, trades.size());
-            List<Trade> batch = trades.subList(i, end);
+        // Create a range of indices for the batches
+        IntStream.range(0, batchCount).parallel().forEach(batchIndex -> {
+            int start = batchIndex * batchSize;
+            int end = Math.min(start + batchSize, totalTradeCount);
 
+            List<Trade> batch = trades.subList(start, end);
+
+            // This call is now happening on multiple threads simultaneously
             int publishedInBatch = kafkaProducerService.publishBatch(batch);
-            totalPublished += publishedInBatch;
 
-            jobTrackingService.updateProgress(jobId, totalPublished, trades.size());
+            int currentTotal = totalPublished.addAndGet(publishedInBatch);
 
-            if ((i / batchSize + 1) % 10 == 0) {
-                log.info("Published batch {}/{} for job: {}", (i / batchSize + 1), batchCount, jobId);
+            // Update progress in Redis (shared state)
+            jobTrackingService.updateProgress(jobId, currentTotal, totalTradeCount);
+
+            if (batchIndex % 10 == 0) {
+                log.info("Batch {}/{} processed by thread: {}",
+                        batchIndex + 1, batchCount, Thread.currentThread().getName());
             }
-        }
+        });
 
-        log.info("Completed publishing {} trades for job: {}", totalPublished, jobId);
-        return totalPublished;
+        log.info("Completed parallel publishing. Total: {} for job: {}", totalPublished.get(), jobId);
+        return totalPublished.get();
     }
-
     private void logCompletionMetrics(String jobId, LocalDateTime startTime, int generated, int published) {
         Duration duration = Duration.between(startTime, LocalDateTime.now());
         long seconds = duration.getSeconds();
