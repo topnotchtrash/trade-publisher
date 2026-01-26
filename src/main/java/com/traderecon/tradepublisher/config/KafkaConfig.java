@@ -40,8 +40,8 @@ public class KafkaConfig {
         configProps.put(ProducerConfig.LINGER_MS_CONFIG, 10);
         configProps.put(ProducerConfig.BUFFER_MEMORY_CONFIG, 33554432);
 
-        configProps.put(ProducerConfig.COMPRESSION_TYPE_CONFIG, "snappy");
-
+        //configProps.put(ProducerConfig.COMPRESSION_TYPE_CONFIG, "snappy");
+        configProps.put(ProducerConfig.COMPRESSION_TYPE_CONFIG, "none");
         configProps.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, 5);
         configProps.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, true);
 

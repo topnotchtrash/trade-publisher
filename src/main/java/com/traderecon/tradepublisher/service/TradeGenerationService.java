@@ -99,35 +99,33 @@ public class TradeGenerationService {
     }
 
     private int publishTradesInBatches(List<Trade> trades, String jobId) {
-        AtomicInteger totalPublished = new AtomicInteger(0); // Thread-safe counter
+        AtomicInteger totalPublished = new AtomicInteger(0);
         int totalTradeCount = trades.size();
         int batchCount = (int) Math.ceil((double) totalTradeCount / batchSize);
 
         log.info("Starting Parallel Publishing: {} trades in {} batches", totalTradeCount, batchCount);
 
-        // Create a range of indices for the batches
         IntStream.range(0, batchCount).parallel().forEach(batchIndex -> {
             int start = batchIndex * batchSize;
             int end = Math.min(start + batchSize, totalTradeCount);
 
             List<Trade> batch = trades.subList(start, end);
-
-            // This call is now happening on multiple threads simultaneously
             int publishedInBatch = kafkaProducerService.publishBatch(batch);
+            totalPublished.addAndGet(publishedInBatch);
 
-            int currentTotal = totalPublished.addAndGet(publishedInBatch);
-
-            // Update progress in Redis (shared state)
-            jobTrackingService.updateProgress(jobId, publishedInBatch, totalTradeCount);
-
-            if (batchIndex % 10 == 0) {
+            if ((batchIndex + 1) % 10 == 0) {
                 log.info("Batch {}/{} processed by thread: {}",
                         batchIndex + 1, batchCount, Thread.currentThread().getName());
             }
         });
 
-        log.info("Completed parallel publishing. Total: {} for job: {}", totalPublished.get(), jobId);
-        return totalPublished.get();
+        int finalPublishedCount = totalPublished.get();
+
+        // Single Redis update after all publishing completes
+        jobTrackingService.updateProgress(jobId, finalPublishedCount, totalTradeCount);
+
+        log.info("Completed parallel publishing. Total: {} for job: {}", finalPublishedCount, jobId);
+        return finalPublishedCount;
     }
     private void logCompletionMetrics(String jobId, LocalDateTime startTime, int generated, int published) {
         Duration duration = Duration.between(startTime, LocalDateTime.now());

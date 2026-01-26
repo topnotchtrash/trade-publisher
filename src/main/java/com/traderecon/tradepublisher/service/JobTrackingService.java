@@ -1,11 +1,13 @@
 package com.traderecon.tradepublisher.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.traderecon.tradepublisher.exception.JobNotFoundException;
 import com.traderecon.tradepublisher.model.JobStatus;
 import com.traderecon.tradepublisher.model.JobStatusEnum;
 import com.traderecon.tradepublisher.model.ReconciliationRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
@@ -19,7 +21,8 @@ import java.util.concurrent.TimeUnit;
 public class JobTrackingService {
 
     private final RedisTemplate<String, Object> redisTemplate;
-
+    @Autowired
+    private ObjectMapper objectMapper;
     @Value("${job.ttl-hours:24}")
     private Integer ttlHours;
 
@@ -64,18 +67,23 @@ public class JobTrackingService {
         log.info("Job {} - Trades generated: {}", jobId, tradesGenerated);
     }
 
-    public void updateProgress(String jobId, int delta, int totalTrades) {
-        String key = "JOB_STATUS:" + jobId;
-        String hashKey = "tradesPublished";
+    public void updateProgress(String jobId, int tradesPublished, int totalTrades) {
 
-        // This forces Redis to treat the value as a long for the increment operation
-        Long newTotal = redisTemplate.opsForHash().increment(key, hashKey, (long) delta);
+        JobStatus jobStatus = getJobStatus(jobId);
 
-        if (newTotal != null && (newTotal % 10000 == 0 || newTotal >= totalTrades)) {
+
+        jobStatus.setTradesPublished(tradesPublished);
+
+
+        saveJobStatus(jobId, jobStatus);
+
+
+        if (tradesPublished % 10000 == 0 || tradesPublished >= totalTrades) {
             log.info("Job {} progress: {}/{} trades published ({}%)",
-                    jobId, newTotal, totalTrades, (newTotal * 100) / totalTrades);
+                    jobId, tradesPublished, totalTrades, (tradesPublished * 100) / totalTrades);
         }
     }
+
     public void incrementFailedPublishes(String jobId) {
         JobStatus jobStatus = getJobStatus(jobId);
         jobStatus.setFailedPublishes(jobStatus.getFailedPublishes() + 1);
@@ -96,16 +104,27 @@ public class JobTrackingService {
         log.error("Job {} failed with error: {}", jobId, errorMessage);
     }
 
+
     public JobStatus getJobStatus(String jobId) {
         String key = getJobKey(jobId);
-        Object result = redisTemplate.opsForValue().get(key);
+        Object rawValue = redisTemplate.opsForValue().get(key);
 
-        if (result == null) {
-            log.error("Job not found in Redis: {}", jobId);
-            throw new JobNotFoundException(jobId);
+        if (rawValue == null) {
+            return null;
         }
 
-        return (JobStatus) result;
+        // If it's already the right type, great!
+        if (rawValue instanceof JobStatus) {
+            return (JobStatus) rawValue;
+        }
+
+        // If it's a LinkedHashMap (the error we see), force convert it
+        try {
+            return objectMapper.convertValue(rawValue, JobStatus.class);
+        } catch (Exception e) {
+            log.error("Failed to convert Redis value to JobStatus for job: {}", jobId, e);
+            return null;
+        }
     }
 
     public void deleteJob(String jobId) {
