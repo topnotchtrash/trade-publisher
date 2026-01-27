@@ -75,7 +75,6 @@ public class KafkaProducerService {
     }
 
     private CompletableFuture<SendResult<String, String>> publishTrade(Trade trade, AtomicInteger successCount) {
-        // 1. Start a manual sample to track true ASYNC time
         Timer.Sample sample = Timer.start(meterRegistry);
 
         try {
@@ -85,22 +84,22 @@ public class KafkaProducerService {
             CompletableFuture<SendResult<String, String>> future =
                     kafkaTemplate.send(tradeInputTopic, partitionKey, tradeJson);
 
-            future.whenComplete((result, ex) -> {
-                // 2. Stop the timer ONLY when Kafka actually responds
+            // Use thenApply to ensure successCount is updated BEFORE future completes
+            return future.handle((result, ex) -> {
                 sample.stop(publishLatencyTimer);
 
                 if (ex == null) {
                     onPublishSuccess(trade, result);
                     successCount.incrementAndGet();
+                    return result;
                 } else {
                     onPublishFailure(trade, ex);
+                    throw new RuntimeException(ex);
                 }
             });
 
-            return future;
-
         } catch (JsonProcessingException e) {
-            sample.stop(publishLatencyTimer); // Don't leave the timer hanging
+            sample.stop(publishLatencyTimer);
             log.error("Failed to serialize trade: {}", trade.getTradeId(), e);
             failedCounter.increment();
             return CompletableFuture.failedFuture(e);
