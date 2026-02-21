@@ -4,6 +4,7 @@ import com.traderecon.tradepublisher.model.JobStatusEnum;
 import com.traderecon.tradepublisher.model.ReconciliationRequest;
 import io.annapurna.Annapurna;
 import io.annapurna.model.Trade;
+import io.annapurna.serialization.JsonSerializer;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -80,7 +81,17 @@ public class TradeGenerationService {
                     .parallelism(8)
                     .build()
                     .generate();
-
+            if(trades.size() <= 5){
+                for(Trade trade : trades) {
+                    try {
+                        JsonSerializer jsonSerializer = new JsonSerializer();
+                        String json = jsonSerializer.toJson(trade);
+                        log.info("Generated trade JSON: {}", json);
+                    } catch (Exception e) {
+                        log.error("Failed to serialize trade", e);
+                    }
+                }
+            }
             sample.stop(Timer.builder("trade.generation.duration")
                     .description("Time taken to generate trades")
                     .register(meterRegistry));
